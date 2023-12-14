@@ -26,8 +26,8 @@ from watchtower import CloudWatchLogHandler, WatchtowerWarning  # noqa: E402
 class TestPyCWL(unittest.TestCase):
     def setUp(self):
         self.test_path = os.path.dirname(__file__)
-        self.log_config_yaml_basic = "{}/logging.yml".format(self.test_path)
-        self.log_config_yaml_profile = "{}/logging_profile.yml".format(self.test_path)
+        self.log_config_yaml_basic = f"{self.test_path}/logging.yml"
+        self.log_config_yaml_profile = f"{self.test_path}/logging_profile.yml"
 
     @staticmethod
     def _make_dict_config(**handler_props):
@@ -61,7 +61,7 @@ class TestPyCWL(unittest.TestCase):
             else:
                 break
 
-        log_streams = [log_streams for stream in log_streams]
+        log_streams = [log_streams for _ in log_streams]
         self.assertNotIn(log_stream, log_streams)
 
     def _wait_for_message(self, message, log_group, log_stream, retries=10):
@@ -71,34 +71,33 @@ class TestPyCWL(unittest.TestCase):
                 logGroupName=log_group,
                 logStreamName=log_stream,
             )
-            events = response["events"]
-            if events:
+            if events := response["events"]:
                 messages = [event["message"] for event in events]
                 if message in messages:
                     return
             retries -= 1
             time.sleep(0.5)
         else:
-            self.fail("Couldn't find message: {} in log stream: {}".format(message, log_stream))
+            self.fail(f"Couldn't find message: {message} in log stream: {log_stream}")
 
     def test_basic_pycwl_statements(self):
         h = CloudWatchLogHandler()
         loggers = []
         for i in range(5):
-            logger = logging.getLogger("logger{}".format(i))
+            logger = logging.getLogger(f"logger{i}")
             logger.addHandler(h)
             # logger.addHandler(CloudWatchLogHandler(use_queues=False))
             loggers.append(logger)
-        for i in range(10001):
+        for _ in range(10001):
             for logger in loggers:
                 logger.error("test")
         import time
 
         time.sleep(1)
-        for i in range(9000):
+        for _ in range(9000):
             for logger in loggers:
                 logger.error("test")
-        for i in range(1001):
+        for _ in range(1001):
             for logger in loggers:
                 logger.error("test")
 
@@ -153,9 +152,13 @@ class TestPyCWL(unittest.TestCase):
         aws_config = tempfile.NamedTemporaryFile()
         with open(aws_config.name, "w") as boto3_config_file:
             boto3_config_file.write("[profile watchtowerlogger]\n")
-            boto3_config_file.write("aws_access_key_id={}\n".format(boto3.Session().get_credentials().access_key))
-            boto3_config_file.write("aws_secret_access_key={}\n".format(boto3.Session().get_credentials().secret_key))
-            boto3_config_file.write("region={}\n".format(boto3.Session().region_name))
+            boto3_config_file.write(
+                f"aws_access_key_id={boto3.Session().get_credentials().access_key}\n"
+            )
+            boto3_config_file.write(
+                f"aws_secret_access_key={boto3.Session().get_credentials().secret_key}\n"
+            )
+            boto3_config_file.write(f"region={boto3.Session().region_name}\n")
 
         # load them in order to have the same data format
         config_data = botocore.configloader.load_config(aws_config.name)
@@ -226,7 +229,7 @@ class TestPyCWL(unittest.TestCase):
 
     def test_existing_log_stream_does_not_create_log_stream(self):
         log_group = "py_watchtower_test"
-        log_stream = "existing_" + str(uuid.uuid4())
+        log_stream = f"existing_{str(uuid.uuid4())}"
         logs = boto3.client("logs")
         config_dict = self._make_dict_config(
             log_group_name=log_group,

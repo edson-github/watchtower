@@ -19,7 +19,9 @@ templates_path = [""]
 
 if "readthedocs.org" in os.getcwd().split("/"):
     with open("index.rst", "w") as fh:
-        fh.write("Documentation for this project has moved to https://kislyuk.github.io/" + project)
+        fh.write(
+            f"Documentation for this project has moved to https://kislyuk.github.io/{project}"
+        )
 else:
     html_theme = "furo"
     html_sidebars = {
