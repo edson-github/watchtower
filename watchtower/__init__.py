@@ -28,10 +28,7 @@ def _json_serialize_default(o):
 
     - Serializes all other objects using repr().
     """
-    if isinstance(o, (date, datetime)):
-        return o.isoformat()
-    else:
-        return repr(o)
+    return o.isoformat() if isinstance(o, (date, datetime)) else repr(o)
 
 
 def _boto_debug_filter(record):
@@ -39,9 +36,7 @@ def _boto_debug_filter(record):
     # This is required to avoid message storms any time we send logs.
     if record.name.startswith("botocore") and record.levelname == "DEBUG":
         return False
-    if record.name.startswith("urllib3") and record.levelname == "DEBUG":
-        return False
-    return True
+    return not record.name.startswith("urllib3") or record.levelname != "DEBUG"
 
 
 def _boto_filter(record):
@@ -49,9 +44,7 @@ def _boto_filter(record):
     # This is required to avoid an infinite loop when shutting down.
     if record.name.startswith("botocore"):
         return False
-    if record.name.startswith("urllib3"):
-        return False
-    return True
+    return not record.name.startswith("urllib3")
 
 
 class WatchtowerWarning(UserWarning):
@@ -252,7 +245,7 @@ class CloudWatchLogHandler(logging.Handler):
             self.cwl_client = boto3.client("logs")
         elif boto3_client is not None and boto3_profile_name is None:
             self.cwl_client = boto3_client
-        elif boto3_client is None and boto3_profile_name is not None:
+        elif boto3_client is None:
             self.cwl_client = boto3.session.Session(profile_name=boto3_profile_name).client("logs")
         else:
             raise WatchtowerError("Either boto3_client or boto3_profile_name can be specified, but not both")
@@ -280,8 +273,7 @@ class CloudWatchLogHandler(logging.Handler):
     def _paginate(self, boto3_paginator, *args, **kwargs):
         for page in boto3_paginator.paginate(*args, **kwargs):
             for result_key in boto3_paginator.result_keys:
-                for value in page.get(result_key.parsed.get("value"), []):
-                    yield value
+                yield from page.get(result_key.parsed.get("value"), [])
 
     def _ensure_log_group(self):
         try:
@@ -338,7 +330,7 @@ class CloudWatchLogHandler(logging.Handler):
             kwargs["sequenceToken"] = self.sequence_tokens[log_stream_name]
         response = None
 
-        for retry in range(max_retries):
+        for _ in range(max_retries):
             try:
                 response = self.cwl_client.put_log_events(**kwargs)
                 break
@@ -373,13 +365,13 @@ class CloudWatchLogHandler(logging.Handler):
                         finally:
                             self.creating_log_stream = False
                 else:
-                    warnings.warn("Failed to deliver logs: {}".format(e), WatchtowerWarning)
+                    warnings.warn(f"Failed to deliver logs: {e}", WatchtowerWarning)
             except Exception as e:
-                warnings.warn("Failed to deliver logs: {}".format(e), WatchtowerWarning)
+                warnings.warn(f"Failed to deliver logs: {e}", WatchtowerWarning)
 
         # response can be None only when all retries have been exhausted
         if response is None or "rejectedLogEventsInfo" in response:
-            warnings.warn("Failed to deliver logs: {}".format(response), WatchtowerWarning)
+            warnings.warn(f"Failed to deliver logs: {response}", WatchtowerWarning)
         elif "nextSequenceToken" in response:
             # According to https://github.com/kislyuk/watchtower/issues/134, nextSequenceToken may sometimes be absent
             # from the response
